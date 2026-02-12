@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Clock, Crown, AlertCircle } from 'lucide-react';
+import { Clock, AlertCircle } from 'lucide-react';
 
 interface GameInfoProps {
   turn: 'w' | 'b';
@@ -25,8 +25,6 @@ export function GameInfo({
   playerColor,
 }: GameInfoProps) {
   const isPlayerTurn = turn === playerColor;
-  const opponentColor = playerColor === 'w' ? 'b' : 'w';
-
   const getPieceSymbol = (type: string, color: 'w' | 'b'): string => {
     const symbols: { [key: string]: string } = {
       'w-p': '♙',
