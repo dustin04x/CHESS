@@ -1,12 +1,18 @@
 import { Chess } from 'chess.js';
+import type { Square as ChessSquare } from 'chess.js';
 
-export type Square = string; // e.g., 'e4', 'a1'
+export type Square = string;
 export type Color = 'w' | 'b';
 
 export interface Move {
   from: Square;
   to: Square;
   promotion?: 'q' | 'r' | 'b' | 'n';
+}
+
+export interface Piece {
+  type: string;
+  color: Color;
 }
 
 export interface GameState {
@@ -28,9 +34,6 @@ export class ChessEngine {
     this.game = new Chess(fen);
   }
 
-  /**
-   * Get the current game state
-   */
   getGameState(): GameState {
     const moves = this.game.moves({ verbose: true }).map(m => ({
       from: m.from,
@@ -50,72 +53,40 @@ export class ChessEngine {
     };
   }
 
-  /**
-   * Make a move on the board
-   */
   makeMove(move: Move): boolean {
     try {
-      const result = this.game.move({
-        from: move.from,
-        to: move.to,
-        promotion: move.promotion,
-      });
-
-      if (result) {
-        this.moveHistory.push(move);
-        return true;
-      }
-      return false;
+      const result = this.game.move({ from: move.from, to: move.to, promotion: move.promotion });
+      if (!result) return false;
+      this.moveHistory.push(move);
+      return true;
     } catch {
       return false;
     }
   }
 
-  /**
-   * Undo the last move
-   */
   undoMove(): Move | null {
     const result = this.game.undo();
-    if (result) {
-      return this.moveHistory.pop() || null;
-    }
-    return null;
+    if (!result) return null;
+    return this.moveHistory.pop() || null;
   }
 
-  /**
-   * Get legal moves for a square
-   */
   getLegalMovesFromSquare(square: Square): Square[] {
-    return this.game
-      .moves({ square: square as any, verbose: true })
-      .map(m => m.to);
+    return this.game.moves({ square: square as ChessSquare, verbose: true }).map(m => m.to);
   }
 
-  /**
-   * Get the current FEN
-   */
   getFen(): string {
     return this.game.fen();
   }
 
-  /**
-   * Get ASCII representation (for debugging)
-   */
   getAscii(): string {
     return this.game.ascii();
   }
 
-  /**
-   * Reset the game
-   */
   reset(): void {
     this.game.reset();
     this.moveHistory = [];
   }
 
-  /**
-   * Load a FEN position
-   */
   loadFen(fen: string): boolean {
     try {
       this.game.load(fen);
@@ -126,50 +97,49 @@ export class ChessEngine {
     }
   }
 
-  /**
-   * Get piece at square
-   */
-  getPieceAt(square: Square): { type: string; color: Color } | null {
-    return this.game.get(square as any) as any;
+  getPieceAt(square: Square): Piece | null {
+    const piece = this.game.get(square as ChessSquare);
+    return piece ? { type: piece.type, color: piece.color as Color } : null;
   }
 
-  /**
-   * Get all pieces on the board
-   */
-  getAllPieces(): { [key: string]: { type: string; color: Color } } {
-    return this.game.board().reduce((acc: any, row) => {
-      row.forEach((piece: any) => {
-        if (piece) {
-          acc[piece.square] = piece;
+  getKingSquare(color: Color): Square | null {
+    const board = this.game.board();
+
+    for (let rank = 0; rank < board.length; rank++) {
+      for (let file = 0; file < board[rank].length; file++) {
+        const piece = board[rank][file];
+        if (piece && piece.type === 'k' && piece.color === color) {
+          return `${String.fromCharCode(97 + file)}${8 - rank}`;
         }
+      }
+    }
+
+    return null;
+  }
+
+  getPgn(): string {
+    return this.game.pgn();
+  }
+
+  getAllPieces(): Record<string, Piece> {
+    return this.game.board().reduce<Record<string, Piece>>((acc, row, rank) => {
+      row.forEach((piece, file) => {
+        if (!piece) return;
+        const square = `${String.fromCharCode(97 + file)}${8 - rank}`;
+        acc[square] = { type: piece.type, color: piece.color as Color };
       });
       return acc;
     }, {});
   }
 
-  /**
-   * Get move in long algebraic notation
-   */
   getMoveNotation(move: Move): string {
     const piece = this.getPieceAt(move.from);
-    const typeMap: { [key: string]: string } = {
-      k: 'K',
-      q: 'Q',
-      r: 'R',
-      b: 'B',
-      n: 'N',
-      p: '',
-    };
-
+    const typeMap: Record<string, string> = { k: 'K', q: 'Q', r: 'R', b: 'B', n: 'N', p: '' };
     const typeStr = typeMap[piece?.type || 'p'] || '';
     const promStr = move.promotion ? `=${move.promotion.toUpperCase()}` : '';
-
     return `${typeStr}${move.from}${move.to}${promStr}`;
   }
 
-  /**
-   * Get captured pieces
-   */
   getCapturedPieces(): { white: string[]; black: string[] } {
     const allPieces = {
       white: ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p', 'n', 'n', 'b', 'b', 'r', 'r', 'q'],
@@ -177,18 +147,15 @@ export class ChessEngine {
     };
 
     const currentPieces = this.getAllPieces();
-    const onBoard: { white: string[]; black: string[] } = {
-      white: [],
-      black: [],
-    };
+    const onBoard: { white: string[]; black: string[] } = { white: [], black: [] };
 
     Object.values(currentPieces).forEach(piece => {
       const color = piece.color === 'w' ? 'white' : 'black';
       onBoard[color].push(piece.type);
     });
 
-    const captured = {
-      white: allPieces.black.filter((p, i) => {
+    return {
+      white: allPieces.black.filter(p => {
         const index = onBoard.black.indexOf(p);
         if (index !== -1) {
           onBoard.black.splice(index, 1);
@@ -196,7 +163,7 @@ export class ChessEngine {
         }
         return true;
       }),
-      black: allPieces.white.filter((p, i) => {
+      black: allPieces.white.filter(p => {
         const index = onBoard.white.indexOf(p);
         if (index !== -1) {
           onBoard.white.splice(index, 1);
@@ -205,8 +172,6 @@ export class ChessEngine {
         return true;
       }),
     };
-
-    return captured;
   }
 }
 
