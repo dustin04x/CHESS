@@ -11,12 +11,6 @@ const DEFAULT_BOARD: (Piece | null)[][] = Array.from({ length: 8 }, () => Array(
 
 const formatMove = (move: Move) => `${move.from}-${move.to}${move.promotion ? `=${move.promotion.toUpperCase()}` : ''}`;
 
-interface PendingPromotion {
-  from: Square;
-  to: Square;
-  color: 'w' | 'b';
-}
-
 export default function Home() {
   const [gameEngine, setGameEngine] = useState<ChessEngine | null>(null);
   const [botEngine, setBotEngine] = useState<BotEngine | null>(null);
@@ -80,7 +74,7 @@ export default function Home() {
         }
 
         setBotThinking(false);
-      }, 200);
+      }, 250);
     },
     [updateBoard],
   );
@@ -98,7 +92,6 @@ export default function Home() {
       setLegalMoves([]);
       setLastMove(null);
       setBotThinking(false);
-      setPendingPromotion(null);
 
       updateBoard(engine);
 
@@ -109,54 +102,9 @@ export default function Home() {
     [makeBotMove, updateBoard],
   );
 
-  const maybeRequestPromotion = useCallback(
-    (from: Square, to: Square): boolean => {
-      if (!gameEngine) return false;
-      const movingPiece = gameEngine.getPieceAt(from);
-      if (!movingPiece || movingPiece.type !== 'p') return false;
-
-      const targetRank = Number(to[1]);
-      const reachesLastRank = (movingPiece.color === 'w' && targetRank === 8) || (movingPiece.color === 'b' && targetRank === 1);
-
-      if (!reachesLastRank) return false;
-
-      setPendingPromotion({ from, to, color: movingPiece.color });
-      return true;
-    },
-    [gameEngine],
-  );
-
-  const scheduleBotTurn = useCallback(
-    (engine: ChessEngine, bot: BotEngine) => {
-      setTimeout(() => {
-        const state = engine.getGameState();
-        if (!state.isCheckmate && !state.isStalemate && !state.isDraw) {
-          makeBotMove(engine, bot);
-        }
-      }, 180);
-    },
-    [makeBotMove],
-  );
-
-  const applyPlayerMove = useCallback(
-    (move: Move) => {
-      if (!gameEngine || !botEngine) return;
-
-      if (gameEngine.makeMove(move)) {
-        setLastMove(move);
-        setSelectedSquare(null);
-        setLegalMoves([]);
-        setPendingPromotion(null);
-        updateBoard(gameEngine);
-        scheduleBotTurn(gameEngine, botEngine);
-      }
-    },
-    [botEngine, gameEngine, scheduleBotTurn, updateBoard],
-  );
-
   const handleSquareClick = useCallback(
     (square: Square) => {
-      if (!gameEngine || !botEngine || !gameState || gameOver || botThinking || pendingPromotion) return;
+      if (!gameEngine || !botEngine || !gameState || gameOver || botThinking) return;
       if (gameState.turnColor !== playerColor) return;
 
       if (selectedSquare === null) {
@@ -183,23 +131,22 @@ export default function Home() {
         return;
       }
 
-      if (maybeRequestPromotion(selectedSquare, square)) {
+      const move: Move = { from: selectedSquare, to: square };
+      if (gameEngine.makeMove(move)) {
+        setLastMove(move);
         setSelectedSquare(null);
         setLegalMoves([]);
-        return;
+        updateBoard(gameEngine);
+
+        setTimeout(() => {
+          const state = gameEngine.getGameState();
+          if (!state.isCheckmate && !state.isStalemate && !state.isDraw) {
+            makeBotMove(gameEngine, botEngine);
+          }
+        }, 250);
       }
-
-      applyPlayerMove({ from: selectedSquare, to: square });
     },
-    [applyPlayerMove, botEngine, botThinking, gameEngine, gameOver, gameState, legalMoves, maybeRequestPromotion, pendingPromotion, playerColor, selectedSquare],
-  );
-
-  const handlePromotionChoice = useCallback(
-    (promotion: 'q' | 'r' | 'b' | 'n') => {
-      if (!pendingPromotion) return;
-      applyPlayerMove({ from: pendingPromotion.from, to: pendingPromotion.to, promotion });
-    },
-    [applyPlayerMove, pendingPromotion],
+    [botEngine, botThinking, gameEngine, gameOver, gameState, legalMoves, makeBotMove, playerColor, selectedSquare, updateBoard],
   );
 
   const handleUndo = useCallback(() => {
@@ -213,7 +160,6 @@ export default function Home() {
     setLastMove(null);
     setSelectedSquare(null);
     setLegalMoves([]);
-    setPendingPromotion(null);
     updateBoard(gameEngine);
   }, [botThinking, gameEngine, gameState, updateBoard]);
 
@@ -224,7 +170,6 @@ export default function Home() {
 
   const handleRestart = useCallback(() => {
     setShowSetup(true);
-    setPendingPromotion(null);
   }, []);
 
   const capturedPieces = gameEngine ? gameEngine.getCapturedPieces() : { white: [], black: [] };
@@ -240,15 +185,6 @@ export default function Home() {
     if (!pgnText) return;
     await navigator.clipboard.writeText(pgnText);
   }, [pgnText]);
-
-  const promotionOptions: Array<'q' | 'r' | 'b' | 'n'> = ['q', 'r', 'b', 'n'];
-  const pieceLabels: Record<'q' | 'r' | 'b' | 'n', string> = { q: 'Queen', r: 'Rook', b: 'Bishop', n: 'Knight' };
-  const pieceSymbols: Record<'q' | 'r' | 'b' | 'n', { w: string; b: string }> = {
-    q: { w: '♕', b: '♛' },
-    r: { w: '♖', b: '♜' },
-    b: { w: '♗', b: '♝' },
-    n: { w: '♘', b: '♞' },
-  };
 
   return (
     <main className="min-h-screen bg-[#312e2b] flex items-center justify-center p-4">
@@ -266,7 +202,7 @@ export default function Home() {
                 lastMove={lastMove}
                 isCheck={gameState.isCheck}
                 checkSquare={checkSquare}
-                disabled={gameOver || botThinking || gameState.turnColor !== playerColor || Boolean(pendingPromotion)}
+                disabled={gameOver || botThinking || gameState.turnColor !== playerColor}
                 perspective={playerColor === 'w' ? 'white' : 'black'}
               />
             </div>
@@ -313,7 +249,9 @@ export default function Home() {
                 </button>
               </div>
 
-              {botThinking && <p className="text-amber-300 text-sm">🤖 Bot is calculating the best move...</p>}
+              {botThinking && (
+                <p className="text-amber-300 text-sm animate-pulse">🤖 Bot is calculating the best move...</p>
+              )}
 
               <ol className="max-h-[420px] overflow-auto text-sm space-y-1 pr-1">
                 {gameState.history.length === 0 && <li className="text-slate-300">No moves yet.</li>}
@@ -325,27 +263,6 @@ export default function Home() {
                 ))}
               </ol>
             </aside>
-          </div>
-        </div>
-      )}
-
-      {pendingPromotion && (
-        <div className="fixed inset-0 bg-black/45 flex items-center justify-center z-50">
-          <div className="bg-white rounded-md shadow-xl p-4 w-[320px]">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">Choose promotion piece</h3>
-            <div className="grid grid-cols-4 gap-2">
-              {promotionOptions.map(piece => (
-                <button
-                  key={piece}
-                  type="button"
-                  onClick={() => handlePromotionChoice(piece)}
-                  className="h-16 rounded border border-gray-300 hover:bg-gray-100 text-4xl"
-                  aria-label={pieceLabels[piece]}
-                >
-                  {pieceSymbols[piece][pendingPromotion.color]}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
       )}

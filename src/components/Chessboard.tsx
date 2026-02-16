@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { motion } from 'framer-motion';
 import type { Move, Piece, Square } from '@/lib/chess-engine';
 
 interface ChessboardProps {
@@ -62,65 +63,75 @@ export function Chessboard({
     return square === lastMove.from || square === lastMove.to;
   };
 
-  const boardOrder = perspective === 'black' ? [...board].reverse() : board;
+  const renderSquares = () => {
+    const squares = [];
+    const boardOrder = perspective === 'black' ? [...board].reverse() : board;
+
+    for (let row = 0; row < 8; row++) {
+      const rowOrder = perspective === 'black' ? boardOrder[row].slice().reverse() : boardOrder[row];
+
+      for (let col = 0; col < 8; col++) {
+        const piece = rowOrder[col];
+        const adjustedRow = perspective === 'black' ? 7 - row : row;
+        const adjustedCol = perspective === 'black' ? 7 - col : col;
+
+        const square = getSquareLabel(adjustedRow, adjustedCol);
+        const isLight = isLightSquare(adjustedRow, adjustedCol);
+        const isSelected = square === selectedSquare;
+        const isLegal = legalMoves.includes(square);
+        const isLastMove = isLastMoveSquare(square);
+        const isCheckSquare = isCheck && checkSquare === square;
+
+        squares.push(
+          <motion.button
+            key={square}
+            type="button"
+            onClick={() => !disabled && onSquareClick(square)}
+            disabled={disabled}
+            aria-label={`Square ${square}${piece ? ` with ${piece.color === 'w' ? 'white' : 'black'} ${piece.type}` : ''}`}
+            className={`
+              w-12 h-12 md:w-16 md:h-16 flex items-center justify-center text-4xl md:text-5xl
+              transition-colors relative font-bold
+              ${isLight ? 'bg-yellow-100 hover:bg-yellow-200' : 'bg-yellow-800 hover:bg-yellow-900'}
+              ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}
+              ${isSelected ? 'ring-4 ring-yellow-400 ring-inset' : ''}
+              ${isLastMove ? (isLight ? 'bg-yellow-200' : 'bg-yellow-600') : ''}
+              ${isCheckSquare ? 'ring-4 ring-red-500 ring-inset' : ''}
+            `}
+            whileHover={disabled ? undefined : { scale: 1.02 }}
+            whileTap={disabled ? undefined : { scale: 0.98 }}
+          >
+            {isLegal && (
+              <div className={`absolute w-3 h-3 rounded-full ${piece ? 'ring-2 ring-green-500' : 'bg-green-500 opacity-70'}`} />
+            )}
+
+            {piece && (
+              <motion.div
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 300 }}
+                style={{
+                  textShadow:
+                    piece.color === 'w'
+                      ? '1.5px 1.5px 0 #333, -1.5px -1.5px 0 #333, 1.5px -1.5px 0 #333, -1.5px 1.5px 0 #333'
+                      : '1px 1px 2px rgba(255,255,255,0.8)',
+                }}
+                className={piece.color === 'w' ? 'text-white drop-shadow-lg' : 'text-yellow-950 drop-shadow-md'}
+              >
+                {PIECE_SYMBOLS[`${piece.color}-${piece.type}`]}
+              </motion.div>
+            )}
+          </motion.button>,
+        );
+      }
+    }
+
+    return squares;
+  };
 
   return (
-    <div className="inline-grid grid-cols-8 gap-0 bg-[#4b7399] p-2 rounded-md shadow-xl" role="grid" aria-label="Chess board">
-      {Array.from({ length: 8 }).map((_, row) => {
-        const rowOrder = perspective === 'black' ? boardOrder[row].slice().reverse() : boardOrder[row];
-
-        return rowOrder.map((piece, col) => {
-          const adjustedRow = perspective === 'black' ? 7 - row : row;
-          const adjustedCol = perspective === 'black' ? 7 - col : col;
-
-          const square = getSquareLabel(adjustedRow, adjustedCol);
-          const isLight = isLightSquare(adjustedRow, adjustedCol);
-          const isSelected = square === selectedSquare;
-          const isLegal = legalMoves.includes(square);
-          const isLastMove = isLastMoveSquare(square);
-          const isCheckSquare = isCheck && checkSquare === square;
-
-          return (
-            <button
-              key={square}
-              type="button"
-              onClick={() => !disabled && onSquareClick(square)}
-              disabled={disabled}
-              aria-label={`Square ${square}${piece ? ` with ${piece.color === 'w' ? 'white' : 'black'} ${piece.type}` : ''}`}
-              className={`
-                w-12 h-12 md:w-[72px] md:h-[72px] flex items-center justify-center text-4xl md:text-5xl
-                relative font-bold select-none transition-colors
-                ${isLight ? 'bg-[#f0d9b5]' : 'bg-[#b58863]'}
-                ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}
-                ${isSelected ? 'ring-4 ring-[#4caf50] ring-inset z-10' : ''}
-                ${isLastMove ? (isLight ? 'bg-[#f7ec74]' : 'bg-[#d8b640]') : ''}
-                ${isCheckSquare ? 'ring-4 ring-red-600 ring-inset' : ''}
-              `}
-            >
-              {isLegal && (
-                <span
-                  className={`absolute rounded-full ${piece ? 'w-8 h-8 border-4 border-[#2e7d32]/70' : 'w-4 h-4 bg-[#2e7d32]/70'}`}
-                  aria-hidden
-                />
-              )}
-
-              {piece && (
-                <span
-                  style={{
-                    textShadow:
-                      piece.color === 'w'
-                        ? '1.2px 1.2px 0 #333, -1.2px -1.2px 0 #333, 1.2px -1.2px 0 #333, -1.2px 1.2px 0 #333'
-                        : '0.6px 0.6px 1.5px rgba(255,255,255,0.7)',
-                  }}
-                  className={piece.color === 'w' ? 'text-white drop-shadow-sm' : 'text-[#1f1f1f]'}
-                >
-                  {PIECE_SYMBOLS[`${piece.color}-${piece.type}`]}
-                </span>
-              )}
-            </button>
-          );
-        });
-      })}
+    <div className="inline-grid grid-cols-8 gap-0 bg-gray-800 p-2 rounded-lg shadow-2xl border-8 border-yellow-900" role="grid">
+      {renderSquares()}
     </div>
   );
 }
