@@ -43,9 +43,7 @@ export function Chessboard({
   };
 
   const getSquareCoords = (row: number, col: number): { rank: number; file: string } => {
-    if (perspective === 'black') {
-      return { rank: row + 1, file: String.fromCharCode(104 - col) };
-    }
+    if (perspective === 'black') return { rank: row + 1, file: String.fromCharCode(104 - col) };
     return { rank: 8 - row, file: String.fromCharCode(97 + col) };
   };
 

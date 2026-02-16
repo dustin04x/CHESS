@@ -26,6 +26,7 @@ export default function Home() {
   const [gameOver, setGameOver] = useState(false);
   const [winner, setWinner] = useState<'w' | 'b' | 'draw' | null>(null);
   const [botThinking, setBotThinking] = useState(false);
+  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
 
   const updateBoard = useCallback((engine: ChessEngine) => {
     const boardArray: (Piece | null)[][] = [];
@@ -186,7 +187,7 @@ export default function Home() {
   }, [pgnText]);
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center p-4">
+    <main className="min-h-screen bg-[#312e2b] flex items-center justify-center p-4">
       <SetupDialog isOpen={showSetup} onStart={initializeGame} />
 
       {!showSetup && gameEngine && gameState && (
