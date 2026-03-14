@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Clock, AlertCircle } from 'lucide-react';
+import { AlertCircle, Clock } from 'lucide-react';
 
 interface GameInfoProps {
   turn: 'w' | 'b';
@@ -14,6 +14,19 @@ interface GameInfoProps {
   playerColor: 'w' | 'b';
 }
 
+const PIECE_SYMBOLS: Record<string, string> = {
+  'w-p': '\u2659',
+  'w-n': '\u2658',
+  'w-b': '\u2657',
+  'w-r': '\u2656',
+  'w-q': '\u2655',
+  'b-p': '\u265F',
+  'b-n': '\u265E',
+  'b-b': '\u265D',
+  'b-r': '\u265C',
+  'b-q': '\u265B',
+};
+
 export function GameInfo({
   turn,
   isCheck,
@@ -25,77 +38,51 @@ export function GameInfo({
   playerColor,
 }: GameInfoProps) {
   const isPlayerTurn = turn === playerColor;
-  const getPieceSymbol = (type: string, color: 'w' | 'b'): string => {
-    const symbols: { [key: string]: string } = {
-      'w-p': '♙',
-      'w-n': '♘',
-      'w-b': '♗',
-      'w-r': '♖',
-      'w-q': '♕',
-      'b-p': '♟',
-      'b-n': '♞',
-      'b-b': '♝',
-      'b-r': '♜',
-      'b-q': '♛',
-    };
-    return symbols[`${color}-${type}`] || '';
-  };
 
   return (
-    <div className="space-y-4 w-full max-w-sm">
-      {/* Status */}
-      <div className="bg-gradient-to-r from-slate-700 to-slate-800 rounded-lg p-4 text-white">
-        <div className="flex items-center gap-2 mb-3">
-          <Clock className="w-5 h-5" />
+    <div className="w-full max-w-sm space-y-4">
+      <div className="rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(49,44,40,0.95),rgba(33,30,27,0.98))] p-5 text-white shadow-[0_18px_45px_rgba(0,0,0,0.25)]">
+        <div className="mb-3 flex items-center gap-2">
+          <Clock className="h-5 w-5" />
           <span className="font-semibold">Game Status</span>
         </div>
 
-        {isCheckmate && (
-          <div className="text-green-400 font-bold mb-2">♔ Checkmate!</div>
-        )}
-
-        {isStalemate && (
-          <div className="text-yellow-400 font-bold mb-2">Stalemate - Draw</div>
-        )}
-
-        {isDraw && (
-          <div className="text-yellow-400 font-bold mb-2">Draw</div>
-        )}
+        {isCheckmate && <div className="mb-2 font-bold text-emerald-300">Checkmate</div>}
+        {isStalemate && <div className="mb-2 font-bold text-amber-300">Stalemate</div>}
+        {isDraw && <div className="mb-2 font-bold text-amber-300">Draw</div>}
 
         {isCheck && !isCheckmate && (
-          <div className="flex items-center gap-2 text-red-400 font-bold mb-2">
-            <AlertCircle className="w-4 h-4" />
-            Check!
+          <div className="mb-2 flex items-center gap-2 font-bold text-red-400">
+            <AlertCircle className="h-4 w-4" />
+            Check
           </div>
         )}
 
-        <div className={`text-sm ${isPlayerTurn ? 'text-green-300' : 'text-gray-300'}`}>
-          {isPlayerTurn ? '👤 Your turn' : '🤖 Opponent thinking...'}
+        <div className={`text-sm ${isPlayerTurn ? 'text-emerald-300' : 'text-stone-300'}`}>
+          {isPlayerTurn ? 'Your move' : 'Bot to move'}
         </div>
       </div>
 
-      {/* Captured pieces - Black */}
       {blackCaptures.length > 0 && (
-        <div className="bg-slate-100 rounded-lg p-3">
-          <div className="text-xs font-semibold text-gray-600 mb-2">Opponent Captured</div>
+        <div className="rounded-2xl bg-[#f4ecdf] p-4">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#7f6b52]">Opponent Captured</div>
           <div className="flex flex-wrap gap-2">
-            {blackCaptures.map((piece, idx) => (
-              <div key={idx} className="text-2xl">
-                {getPieceSymbol(piece, 'w')}
+            {blackCaptures.map((piece, index) => (
+              <div key={`${piece}-${index}`} className="text-2xl text-[#2f2924]">
+                {PIECE_SYMBOLS[`w-${piece}`]}
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Captured pieces - White */}
       {whiteCaptures.length > 0 && (
-        <div className="bg-slate-800 rounded-lg p-3">
-          <div className="text-xs font-semibold text-gray-300 mb-2">You Captured</div>
+        <div className="rounded-2xl border border-white/10 bg-[#2c2925] p-4">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#c5b9a4]">You Captured</div>
           <div className="flex flex-wrap gap-2">
-            {whiteCaptures.map((piece, idx) => (
-              <div key={idx} className="text-2xl text-white drop-shadow-lg">
-                {getPieceSymbol(piece, 'b')}
+            {whiteCaptures.map((piece, index) => (
+              <div key={`${piece}-${index}`} className="text-2xl text-[#f8f5ee]">
+                {PIECE_SYMBOLS[`b-${piece}`]}
               </div>
             ))}
           </div>

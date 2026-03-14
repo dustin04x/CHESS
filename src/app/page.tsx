@@ -1,46 +1,67 @@
 'use client';
 
 import React, { useCallback, useMemo, useState } from 'react';
-import ChessEngine from '@/lib/chess-engine';
-import type { GameState, Move, Piece, Square } from '@/lib/chess-engine';
-import BotEngine from '@/lib/bot-engine';
+import BotEngine, { BOT_LEVELS } from '@/lib/bot-engine';
 import type { BotDifficulty } from '@/lib/bot-engine';
-import { Chessboard, GameControls, GameInfo, SetupDialog } from '@/components';
+import ChessEngine from '@/lib/chess-engine';
+import type { GameState, Move, Piece, PromotionPiece, Square } from '@/lib/chess-engine';
+import { Chessboard, GameControls, GameInfo, PromotionDialog, SetupDialog } from '@/components';
 
-const DEFAULT_BOARD: (Piece | null)[][] = Array.from({ length: 8 }, () => Array(8).fill(null));
+const DEFAULT_BOARD: (Piece | null)[][] = Array.from({ length: 8 }, () => Array<Piece | null>(8).fill(null));
 
-const formatMove = (move: Move) => `${move.from}-${move.to}${move.promotion ? `=${move.promotion.toUpperCase()}` : ''}`;
+interface PendingPromotion {
+  from: Square;
+  to: Square;
+  color: 'w' | 'b';
+}
+
+const buildBoard = (engine: ChessEngine) =>
+  Array.from({ length: 8 }, (_, row) =>
+    Array.from({ length: 8 }, (_, col) => {
+      const square = `${String.fromCharCode(97 + col)}${8 - row}` as Square;
+      return engine.getPieceAt(square);
+    }),
+  );
+
+const groupMoves = (history: Move[]) => {
+  const pairs: Array<{ moveNumber: number; white: Move; black?: Move }> = [];
+
+  for (let index = 0; index < history.length; index += 2) {
+    pairs.push({
+      moveNumber: index / 2 + 1,
+      white: history[index],
+      black: history[index + 1],
+    });
+  }
+
+  return pairs;
+};
 
 export default function Home() {
   const [gameEngine, setGameEngine] = useState<ChessEngine | null>(null);
   const [botEngine, setBotEngine] = useState<BotEngine | null>(null);
   const [playerColor, setPlayerColor] = useState<'w' | 'b'>('w');
   const [showSetup, setShowSetup] = useState(true);
+  const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>('intermediate');
 
   const [board, setBoard] = useState<(Piece | null)[][]>(DEFAULT_BOARD);
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [legalMoves, setLegalMoves] = useState<Square[]>([]);
   const [lastMove, setLastMove] = useState<Move | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
 
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [gameOver, setGameOver] = useState(false);
   const [winner, setWinner] = useState<'w' | 'b' | 'draw' | null>(null);
   const [botThinking, setBotThinking] = useState(false);
-  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
+
+  const clearSelection = useCallback(() => {
+    setSelectedSquare(null);
+    setLegalMoves([]);
+  }, []);
 
   const updateBoard = useCallback((engine: ChessEngine) => {
-    const boardArray: (Piece | null)[][] = [];
-
-    for (let row = 0; row < 8; row++) {
-      const boardRow: (Piece | null)[] = [];
-      for (let col = 0; col < 8; col++) {
-        const square = `${String.fromCharCode(97 + col)}${8 - row}` as Square;
-        boardRow.push(engine.getPieceAt(square));
-      }
-      boardArray.push(boardRow);
-    }
-
-    setBoard(boardArray);
+    setBoard(buildBoard(engine));
 
     const state = engine.getGameState();
     setGameState(state);
@@ -65,10 +86,10 @@ export default function Home() {
     (engine: ChessEngine, bot: BotEngine) => {
       setBotThinking(true);
 
-      setTimeout(() => {
+      window.setTimeout(() => {
         const move = bot.getBestMove(engine.getFen());
-        if (move) {
-          engine.makeMove(move);
+
+        if (move && engine.makeMove(move)) {
           setLastMove(move);
           updateBoard(engine);
         }
@@ -79,6 +100,26 @@ export default function Home() {
     [updateBoard],
   );
 
+  const finishPlayerMove = useCallback(
+    (move: Move) => {
+      if (!gameEngine || !botEngine) return;
+      if (!gameEngine.makeMove(move)) return;
+
+      setLastMove(move);
+      setPendingPromotion(null);
+      clearSelection();
+      updateBoard(gameEngine);
+
+      window.setTimeout(() => {
+        const state = gameEngine.getGameState();
+        if (!state.isCheckmate && !state.isStalemate && !state.isDraw) {
+          makeBotMove(gameEngine, botEngine);
+        }
+      }, 250);
+    },
+    [botEngine, clearSelection, gameEngine, makeBotMove, updateBoard],
+  );
+
   const initializeGame = useCallback(
     (pColor: 'w' | 'b', difficulty: BotDifficulty) => {
       const engine = new ChessEngine();
@@ -87,11 +128,13 @@ export default function Home() {
       setGameEngine(engine);
       setBotEngine(bot);
       setPlayerColor(pColor);
+      setBotDifficulty(difficulty);
       setShowSetup(false);
-      setSelectedSquare(null);
-      setLegalMoves([]);
+      setBoard(buildBoard(engine));
       setLastMove(null);
+      setPendingPromotion(null);
       setBotThinking(false);
+      clearSelection();
 
       updateBoard(engine);
 
@@ -99,15 +142,15 @@ export default function Home() {
         makeBotMove(engine, bot);
       }
     },
-    [makeBotMove, updateBoard],
+    [clearSelection, makeBotMove, updateBoard],
   );
 
   const handleSquareClick = useCallback(
     (square: Square) => {
-      if (!gameEngine || !botEngine || !gameState || gameOver || botThinking) return;
+      if (!gameEngine || !botEngine || !gameState || gameOver || botThinking || pendingPromotion) return;
       if (gameState.turnColor !== playerColor) return;
 
-      if (selectedSquare === null) {
+      if (!selectedSquare) {
         const moves = gameEngine.getLegalMovesFromSquare(square);
         if (moves.length > 0) {
           setSelectedSquare(square);
@@ -117,8 +160,7 @@ export default function Home() {
       }
 
       if (selectedSquare === square) {
-        setSelectedSquare(null);
-        setLegalMoves([]);
+        clearSelection();
         return;
       }
 
@@ -127,26 +169,48 @@ export default function Home() {
         if (moves.length > 0) {
           setSelectedSquare(square);
           setLegalMoves(moves);
+        } else {
+          clearSelection();
         }
         return;
       }
 
-      const move: Move = { from: selectedSquare, to: square };
-      if (gameEngine.makeMove(move)) {
-        setLastMove(move);
-        setSelectedSquare(null);
-        setLegalMoves([]);
-        updateBoard(gameEngine);
+      const matchingMoves = gameState.legalMoves.filter((move) => move.from === selectedSquare && move.to === square);
+      const promotionMoves = matchingMoves.filter((move) => move.promotion);
 
-        setTimeout(() => {
-          const state = gameEngine.getGameState();
-          if (!state.isCheckmate && !state.isStalemate && !state.isDraw) {
-            makeBotMove(gameEngine, botEngine);
-          }
-        }, 250);
+      if (promotionMoves.length > 0) {
+        setPendingPromotion({ from: selectedSquare, to: square, color: playerColor });
+        return;
       }
+
+      finishPlayerMove({ from: selectedSquare, to: square });
     },
-    [botEngine, botThinking, gameEngine, gameOver, gameState, legalMoves, makeBotMove, playerColor, selectedSquare, updateBoard],
+    [
+      botEngine,
+      botThinking,
+      clearSelection,
+      finishPlayerMove,
+      gameEngine,
+      gameOver,
+      gameState,
+      legalMoves,
+      pendingPromotion,
+      playerColor,
+      selectedSquare,
+    ],
+  );
+
+  const handlePromotionSelect = useCallback(
+    (promotion: PromotionPiece) => {
+      if (!pendingPromotion) return;
+
+      finishPlayerMove({
+        from: pendingPromotion.from,
+        to: pendingPromotion.to,
+        promotion,
+      });
+    },
+    [finishPlayerMove, pendingPromotion],
   );
 
   const handleUndo = useCallback(() => {
@@ -158,17 +222,19 @@ export default function Home() {
     }
 
     setLastMove(null);
-    setSelectedSquare(null);
-    setLegalMoves([]);
+    setPendingPromotion(null);
+    clearSelection();
     updateBoard(gameEngine);
-  }, [botThinking, gameEngine, gameState, updateBoard]);
+  }, [botThinking, clearSelection, gameEngine, gameState, updateBoard]);
 
   const handleResign = useCallback(() => {
     setGameOver(true);
     setWinner(playerColor === 'w' ? 'b' : 'w');
+    setPendingPromotion(null);
   }, [playerColor]);
 
   const handleRestart = useCallback(() => {
+    setPendingPromotion(null);
     setShowSetup(true);
   }, []);
 
@@ -179,21 +245,44 @@ export default function Home() {
     return gameEngine.getKingSquare(gameState.turnColor);
   }, [gameEngine, gameState]);
 
+  const movePairs = useMemo(() => groupMoves(gameState?.history ?? []), [gameState?.history]);
   const pgnText = gameEngine ? gameEngine.getPgn() : '';
 
   const handleCopyPgn = useCallback(async () => {
     if (!pgnText) return;
-    await navigator.clipboard.writeText(pgnText);
+
+    try {
+      await navigator.clipboard.writeText(pgnText);
+    } catch {
+      // Ignore clipboard errors in unsupported environments.
+    }
   }, [pgnText]);
 
   return (
-    <main className="min-h-screen bg-[#312e2b] flex items-center justify-center p-4">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#5a5147_0%,#312e2b_30%,#1f1c19_100%)] px-4 py-6 text-white">
       <SetupDialog isOpen={showSetup} onStart={initializeGame} />
 
+      <PromotionDialog
+        isOpen={pendingPromotion !== null}
+        color={pendingPromotion?.color ?? playerColor}
+        onSelect={handlePromotionSelect}
+        onCancel={() => setPendingPromotion(null)}
+      />
+
       {!showSetup && gameEngine && gameState && (
-        <div className="w-full max-w-7xl">
-          <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 items-start">
-            <div className="xl:col-span-2 flex justify-center">
+        <div className="mx-auto w-full max-w-7xl">
+          <div className="mb-6 flex flex-col gap-2">
+            <h1 className="text-3xl font-bold tracking-tight text-[#f5f1e8]">Chess</h1>
+            <p className="max-w-2xl text-sm text-[#d9d1c5]">
+              Full rules are enabled through the engine, including castling, en passant, checkmate detection, and pawn promotion.
+            </p>
+            <p className="text-xs uppercase tracking-[0.18em] text-[#bfb2a0]">
+              Level: {BOT_LEVELS[botDifficulty].label}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.7fr)_minmax(280px,0.8fr)] xl:items-start">
+            <div className="flex justify-center xl:justify-start">
               <Chessboard
                 board={board}
                 onSquareClick={handleSquareClick}
@@ -202,7 +291,7 @@ export default function Home() {
                 lastMove={lastMove}
                 isCheck={gameState.isCheck}
                 checkSquare={checkSquare}
-                disabled={gameOver || botThinking || gameState.turnColor !== playerColor}
+                disabled={gameOver || botThinking || gameState.turnColor !== playerColor || pendingPromotion !== null}
                 perspective={playerColor === 'w' ? 'white' : 'black'}
               />
             </div>
@@ -228,40 +317,50 @@ export default function Home() {
               />
 
               {gameOver && (
-                <div className="bg-slate-700 rounded-lg p-4 text-white text-center">
-                  {winner === 'draw' && <p className="text-lg font-bold">Draw!</p>}
-                  {winner === 'w' && <p className="text-lg font-bold">{playerColor === 'w' ? '🎉 You won!' : 'Bot won!'}</p>}
-                  {winner === 'b' && <p className="text-lg font-bold">{playerColor === 'b' ? '🎉 You won!' : 'Bot won!'}</p>}
+                <div className="rounded-3xl border border-white/10 bg-[#2c2925] p-5 text-center shadow-[0_18px_45px_rgba(0,0,0,0.22)]">
+                  {winner === 'draw' && <p className="text-lg font-bold text-amber-300">Draw</p>}
+                  {winner === 'w' && <p className="text-lg font-bold text-emerald-300">{playerColor === 'w' ? 'You won' : 'Bot won'}</p>}
+                  {winner === 'b' && <p className="text-lg font-bold text-emerald-300">{playerColor === 'b' ? 'You won' : 'Bot won'}</p>}
                 </div>
               )}
             </div>
 
-            <aside className="bg-slate-800/80 rounded-lg p-4 text-white space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="font-semibold text-lg">Move History</h2>
+            <aside className="rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(33,30,27,0.95),rgba(24,22,20,0.98))] p-5 text-white shadow-[0_18px_45px_rgba(0,0,0,0.25)]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold">Move History</h2>
+                  <p className="text-xs uppercase tracking-[0.18em] text-[#bfb2a0]">SAN notation</p>
+                </div>
                 <button
                   type="button"
                   onClick={handleCopyPgn}
                   disabled={!pgnText}
-                  className="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="rounded-xl bg-[#4b443d] px-3 py-2 text-xs font-semibold transition hover:bg-[#5a5249] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Copy PGN
                 </button>
               </div>
 
-              {botThinking && (
-                <p className="text-amber-300 text-sm animate-pulse">🤖 Bot is calculating the best move...</p>
-              )}
+              {botThinking && <p className="mt-3 text-sm text-amber-300">Bot is calculating...</p>}
 
-              <ol className="max-h-[420px] overflow-auto text-sm space-y-1 pr-1">
-                {gameState.history.length === 0 && <li className="text-slate-300">No moves yet.</li>}
-                {gameState.history.map((move, index) => (
-                  <li key={`${move.from}-${move.to}-${index}`} className="font-mono">
-                    <span className="text-slate-300 mr-2">{index + 1}.</span>
-                    {formatMove(move)}
-                  </li>
-                ))}
-              </ol>
+              <div className="mt-4 max-h-[480px] overflow-auto rounded-2xl bg-black/10 p-2">
+                {movePairs.length === 0 ? (
+                  <p className="px-2 py-3 text-sm text-stone-300">No moves yet.</p>
+                ) : (
+                  <ol className="space-y-1 text-sm">
+                    {movePairs.map((pair) => (
+                      <li
+                        key={pair.moveNumber}
+                        className="grid grid-cols-[44px_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2 rounded-xl px-2 py-2 font-mono hover:bg-white/5"
+                      >
+                        <span className="text-stone-400">{pair.moveNumber}.</span>
+                        <span>{pair.white.san ?? gameEngine.getMoveNotation(pair.white)}</span>
+                        <span className="text-stone-200">{pair.black ? pair.black.san ?? gameEngine.getMoveNotation(pair.black) : ''}</span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
             </aside>
           </div>
         </div>

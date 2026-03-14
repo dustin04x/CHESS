@@ -3,11 +3,17 @@ import type { Square as ChessSquare } from 'chess.js';
 
 export type Square = string;
 export type Color = 'w' | 'b';
+export type PromotionPiece = 'q' | 'r' | 'b' | 'n';
 
 export interface Move {
   from: Square;
   to: Square;
-  promotion?: 'q' | 'r' | 'b' | 'n';
+  promotion?: PromotionPiece;
+  san?: string;
+  piece?: string;
+  captured?: string;
+  flags?: string;
+  color?: Color;
 }
 
 export interface Piece {
@@ -28,17 +34,32 @@ export interface GameState {
 
 export class ChessEngine {
   private game: Chess;
-  private moveHistory: Move[] = [];
 
   constructor(fen?: string) {
     this.game = new Chess(fen);
   }
 
   getGameState(): GameState {
+    const history = this.game.history({ verbose: true }).map((move) => ({
+      from: move.from,
+      to: move.to,
+      promotion: move.promotion as PromotionPiece | undefined,
+      san: move.san,
+      piece: move.piece,
+      captured: move.captured,
+      flags: move.flags,
+      color: move.color as Color,
+    }));
+
     const moves = this.game.moves({ verbose: true }).map(m => ({
       from: m.from,
       to: m.to,
-      promotion: m.promotion as 'q' | 'r' | 'b' | 'n' | undefined,
+      promotion: m.promotion as PromotionPiece | undefined,
+      san: m.san,
+      piece: m.piece,
+      captured: m.captured,
+      flags: m.flags,
+      color: m.color as Color,
     }));
 
     return {
@@ -49,7 +70,7 @@ export class ChessEngine {
       isDraw: this.game.isDraw(),
       isCheck: this.game.inCheck(),
       turnColor: this.game.turn(),
-      history: this.moveHistory,
+      history,
     };
   }
 
@@ -57,7 +78,6 @@ export class ChessEngine {
     try {
       const result = this.game.move({ from: move.from, to: move.to, promotion: move.promotion });
       if (!result) return false;
-      this.moveHistory.push(move);
       return true;
     } catch {
       return false;
@@ -67,7 +87,16 @@ export class ChessEngine {
   undoMove(): Move | null {
     const result = this.game.undo();
     if (!result) return null;
-    return this.moveHistory.pop() || null;
+    return {
+      from: result.from,
+      to: result.to,
+      promotion: result.promotion as PromotionPiece | undefined,
+      san: result.san,
+      piece: result.piece,
+      captured: result.captured,
+      flags: result.flags,
+      color: result.color as Color,
+    };
   }
 
   getLegalMovesFromSquare(square: Square): Square[] {
@@ -84,13 +113,11 @@ export class ChessEngine {
 
   reset(): void {
     this.game.reset();
-    this.moveHistory = [];
   }
 
   loadFen(fen: string): boolean {
     try {
       this.game.load(fen);
-      this.moveHistory = [];
       return true;
     } catch {
       return false;
@@ -133,6 +160,7 @@ export class ChessEngine {
   }
 
   getMoveNotation(move: Move): string {
+    if (move.san) return move.san;
     const piece = this.getPieceAt(move.from);
     const typeMap: Record<string, string> = { k: 'K', q: 'Q', r: 'R', b: 'B', n: 'N', p: '' };
     const typeStr = typeMap[piece?.type || 'p'] || '';
@@ -141,37 +169,20 @@ export class ChessEngine {
   }
 
   getCapturedPieces(): { white: string[]; black: string[] } {
-    const allPieces = {
-      white: ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p', 'n', 'n', 'b', 'b', 'r', 'r', 'q'],
-      black: ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p', 'n', 'n', 'b', 'b', 'r', 'r', 'q'],
-    };
+    return this.game.history({ verbose: true }).reduce(
+      (captured, move) => {
+        if (!move.captured) return captured;
 
-    const currentPieces = this.getAllPieces();
-    const onBoard: { white: string[]; black: string[] } = { white: [], black: [] };
-
-    Object.values(currentPieces).forEach(piece => {
-      const color = piece.color === 'w' ? 'white' : 'black';
-      onBoard[color].push(piece.type);
-    });
-
-    return {
-      white: allPieces.black.filter(p => {
-        const index = onBoard.black.indexOf(p);
-        if (index !== -1) {
-          onBoard.black.splice(index, 1);
-          return false;
+        if (move.color === 'w') {
+          captured.white.push(move.captured);
+        } else {
+          captured.black.push(move.captured);
         }
-        return true;
-      }),
-      black: allPieces.white.filter(p => {
-        const index = onBoard.white.indexOf(p);
-        if (index !== -1) {
-          onBoard.white.splice(index, 1);
-          return false;
-        }
-        return true;
-      }),
-    };
+
+        return captured;
+      },
+      { white: [] as string[], black: [] as string[] },
+    );
   }
 }
 
